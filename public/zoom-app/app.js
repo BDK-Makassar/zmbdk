@@ -93,8 +93,18 @@ async function init() {
     setStatus("Terhubung ke meeting: " + meetingUUID);
     log("Zoom App terhubung");
 
-    const userContext = await zoomSdk.callZoomApi("getUserContext");
-    myParticipantUUID = userContext.participantUUID;
+    // getUserContext/getVideoState/onBreakoutRoomChange/onMyActiveSpeakerChange
+    // baru ditambah -- kalau app di Zoom Marketplace belum di-enable buat
+    // API/Event ini, callZoomApi bakal reject dengan "No Permission for
+    // this API [app_not_support]". Dibungkus try/catch masing-masing
+    // supaya SATU fitur yang belum di-enable nggak bikin seluruh init()
+    // gagal (peserta/breakout room dasar tetap harus jalan).
+    try {
+      const userContext = await zoomSdk.callZoomApi("getUserContext");
+      myParticipantUUID = userContext.participantUUID;
+    } catch (err) {
+      log("getUserContext belum di-enable di Zoom Marketplace: " + err.message);
+    }
 
     // Ambil status kamera awal (onMyMediaChange cuma nembak kalau ada
     // PERUBAHAN, jadi kalau kamera sudah nyala dari sebelum panel dibuka,
@@ -102,8 +112,9 @@ async function init() {
     try {
       const videoState = await zoomSdk.callZoomApi("getVideoState");
       myVideoOn = !!videoState.video;
-    } catch {
+    } catch (err) {
       myVideoOn = null;
+      log("getVideoState belum di-enable di Zoom Marketplace: " + err.message);
     }
 
     await loadInitialParticipants();
@@ -208,40 +219,50 @@ function registerListeners() {
   });
 
   // Diri sendiri pindah masuk/keluar breakout room. Dipakai buat scoping
-  // laporan kamera & status bicara ke room yang benar.
-  zoomSdk.addEventListener("onBreakoutRoomChange", async (event) => {
-    if (event.action === "join") {
-      let roomName = breakoutRoomNameById[event.breakoutRoomUUID];
-      if (!roomName) {
-        // Nama room belum ke-cache (misal baru dibuat) -- refresh sekali.
-        await refreshBreakoutRooms();
-        roomName = breakoutRoomNameById[event.breakoutRoomUUID] ?? event.breakoutRoomUUID;
+  // laporan kamera & status bicara ke room yang benar. Dibungkus try/catch
+  // -- kalau event ini belum di-enable di Zoom Marketplace, addEventListener
+  // bisa throw, dan itu nggak boleh gagalin registrasi listener lainnya.
+  try {
+    zoomSdk.addEventListener("onBreakoutRoomChange", async (event) => {
+      if (event.action === "join") {
+        let roomName = breakoutRoomNameById[event.breakoutRoomUUID];
+        if (!roomName) {
+          // Nama room belum ke-cache (misal baru dibuat) -- refresh sekali.
+          await refreshBreakoutRooms();
+          roomName = breakoutRoomNameById[event.breakoutRoomUUID] ?? event.breakoutRoomUUID;
+        }
+        myBreakoutRoomName = roomName;
+        log(`Masuk breakout room: ${roomName}`);
+      } else {
+        myBreakoutRoomName = null;
+        log("Kembali ke main session");
       }
-      myBreakoutRoomName = roomName;
-      log(`Masuk breakout room: ${roomName}`);
-    } else {
-      myBreakoutRoomName = null;
-      log("Kembali ke main session");
-    }
-    // Kirim ulang status kamera saat ini supaya langsung tercatat di room
-    // yang baru, nggak perlu nunggu peserta toggle kamera lagi.
-    sendEvent("video_status_self", {
-      participant_uuid: myParticipantUUID,
-      breakout_room_name: myBreakoutRoomName,
-      video_on: myVideoOn,
+      // Kirim ulang status kamera saat ini supaya langsung tercatat di room
+      // yang baru, nggak perlu nunggu peserta toggle kamera lagi.
+      sendEvent("video_status_self", {
+        participant_uuid: myParticipantUUID,
+        breakout_room_name: myBreakoutRoomName,
+        video_on: myVideoOn,
+      });
     });
-  });
+  } catch (err) {
+    log("onBreakoutRoomChange belum di-enable di Zoom Marketplace: " + err.message);
+  }
 
   // Status bicara diri sendiri (jalan baik di main session maupun breakout
   // room, beda dengan onActiveSpeakerChange yang cuma lihat room yang lagi
   // ditempati panel host).
-  zoomSdk.addEventListener("onMyActiveSpeakerChange", (event) => {
-    sendEvent("my_active_speaker_change", {
-      participant_uuid: myParticipantUUID,
-      breakout_room_name: myBreakoutRoomName,
-      is_speaking: event.status === "started",
+  try {
+    zoomSdk.addEventListener("onMyActiveSpeakerChange", (event) => {
+      sendEvent("my_active_speaker_change", {
+        participant_uuid: myParticipantUUID,
+        breakout_room_name: myBreakoutRoomName,
+        is_speaking: event.status === "started",
+      });
     });
-  });
+  } catch (err) {
+    log("onMyActiveSpeakerChange belum di-enable di Zoom Marketplace: " + err.message);
+  }
 
   // Siapa yang sedang aktif bicara (field-nya "users", bukan "activeSpeakers")
   zoomSdk.addEventListener("onActiveSpeakerChange", (event) => {
