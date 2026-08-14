@@ -72,11 +72,15 @@ async function init() {
       ],
     });
 
-    meetingUUID = configResponse.meetingUUID;
+    // config() tidak mengembalikan meetingUUID -- itu field terpisah,
+    // harus diambil lewat callZoomApi("getMeetingUUID").
+    const { meetingUUID: uuid } = await zoomSdk.callZoomApi("getMeetingUUID");
+    meetingUUID = uuid;
     setStatus("Terhubung ke meeting: " + meetingUUID);
     log("Zoom App terhubung");
 
     await loadInitialParticipants();
+    await loadInitialBreakoutRooms();
     registerListeners();
   } catch (err) {
     setStatus("Gagal terhubung ke Zoom client", false);
@@ -91,7 +95,11 @@ async function loadInitialParticipants() {
     (res.participants || []).forEach((p) => {
       participantsCache[p.participantUUID] = {
         screenName: p.screenName,
-        videoOn: !p.muted && p.videoOn !== false, // sesuaikan field aktual dari SDK versi kamu
+        // getMeetingParticipants tidak mengembalikan status kamera peserta
+        // lain (cuma screenName/participantUUID/role) -- default true di
+        // sini, status kamera diri sendiri di-update lewat onMyMediaChange.
+        // Lihat batasan di README-NEXTJS.md.
+        videoOn: true,
         inBreakoutRoom: null,
         isSpeaking: false,
       };
@@ -106,6 +114,16 @@ async function loadInitialParticipants() {
     });
   } catch (err) {
     log("Gagal ambil daftar peserta awal: " + err.message);
+  }
+}
+
+// Ambil snapshot awal breakout room (kalau sudah dibuat sebelum panel dibuka)
+async function loadInitialBreakoutRooms() {
+  try {
+    const rooms = await zoomSdk.callZoomApi("getBreakoutRoomList");
+    el("breakoutCount").textContent = (rooms.rooms || []).length;
+  } catch (err) {
+    log("Gagal ambil breakout room awal: " + err.message);
   }
 }
 
@@ -147,17 +165,17 @@ function registerListeners() {
     });
   });
 
-  // Siapa yang sedang aktif bicara
+  // Siapa yang sedang aktif bicara (field-nya "users", bukan "activeSpeakers")
   zoomSdk.addEventListener("onActiveSpeakerChange", (event) => {
     Object.values(participantsCache).forEach((p) => (p.isSpeaking = false));
-    (event.activeSpeakers || []).forEach((s) => {
+    (event.users || []).forEach((s) => {
       if (participantsCache[s.participantUUID]) {
         participantsCache[s.participantUUID].isSpeaking = true;
       }
     });
     updateSummaryUI();
     sendEvent("active_speaker_change", {
-      speakers: (event.activeSpeakers || []).map((s) => s.participantUUID),
+      speakers: (event.users || []).map((s) => s.participantUUID),
     });
   });
 
@@ -165,8 +183,8 @@ function registerListeners() {
   zoomSdk.addEventListener("onMeetingConfigChanged", async () => {
     try {
       const rooms = await zoomSdk.callZoomApi("getBreakoutRoomList");
-      el("breakoutCount").textContent = (rooms.breakoutRoomList || []).length;
-      sendEvent("breakout_room_update", { rooms: rooms.breakoutRoomList || [] });
+      el("breakoutCount").textContent = (rooms.rooms || []).length;
+      sendEvent("breakout_room_update", { rooms: rooms.rooms || [] });
       log("Konfigurasi breakout room berubah");
     } catch (err) {
       log("Gagal ambil breakout room list: " + err.message);
