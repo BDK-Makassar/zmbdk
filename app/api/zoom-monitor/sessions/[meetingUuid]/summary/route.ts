@@ -22,7 +22,10 @@ export async function GET(
 
   const [participants, breakoutRooms] = await Promise.all([
     prisma.zoomMeetingParticipant.findMany({ where: { sessionId: session.id, isPresent: true } }),
-    prisma.zoomBreakoutRoom.findMany({ where: { sessionId: session.id } }),
+    prisma.zoomBreakoutRoom.findMany({
+      where: { sessionId: session.id },
+      include: { attendees: { orderBy: { screenName: "asc" } } },
+    }),
   ]);
 
   const speaking = participants.find((p) => p.isSpeaking);
@@ -34,6 +37,12 @@ export async function GET(
     breakout_rooms: breakoutRooms.map((r) => ({
       room_name: r.roomName,
       participant_count: r.participantCount,
+      attendees: r.attendees.map((a) => ({
+        screen_name: a.screenName,
+        is_present: a.isPresent,
+        first_joined_at: a.firstJoinedAt,
+        last_seen_at: a.lastSeenAt,
+      })),
     })),
     participants: participants.map((p) => ({
       screen_name: p.screenName,

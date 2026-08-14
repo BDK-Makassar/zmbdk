@@ -80,7 +80,7 @@ async function init() {
     log("Zoom App terhubung");
 
     await loadInitialParticipants();
-    await loadInitialBreakoutRooms();
+    await refreshBreakoutRooms();
     registerListeners();
   } catch (err) {
     setStatus("Gagal terhubung ke Zoom client", false);
@@ -117,13 +117,18 @@ async function loadInitialParticipants() {
   }
 }
 
-// Ambil snapshot awal breakout room (kalau sudah dibuat sebelum panel dibuka)
-async function loadInitialBreakoutRooms() {
+// Ambil daftar breakout room + peserta di tiap room, lalu kirim ke backend
+// supaya tercatat sebagai rekap kehadiran (nama tetap ada walau sudah
+// keluar room, nama ter-update kalau rename). Dipanggil saat init, tiap
+// onMeetingConfigChanged, DAN dipoll berkala -- karena rename nama tidak
+// selalu memicu onMeetingConfigChanged, cuma perubahan struktur room.
+async function refreshBreakoutRooms() {
   try {
     const rooms = await zoomSdk.callZoomApi("getBreakoutRoomList");
     el("breakoutCount").textContent = (rooms.rooms || []).length;
+    sendEvent("breakout_room_update", { rooms: rooms.rooms || [] });
   } catch (err) {
-    log("Gagal ambil breakout room awal: " + err.message);
+    log("Gagal ambil breakout room list: " + err.message);
   }
 }
 
@@ -181,14 +186,8 @@ function registerListeners() {
 
   // Perubahan konfigurasi breakout room (dibuat/dibubarkan/berubah)
   zoomSdk.addEventListener("onMeetingConfigChanged", async () => {
-    try {
-      const rooms = await zoomSdk.callZoomApi("getBreakoutRoomList");
-      el("breakoutCount").textContent = (rooms.rooms || []).length;
-      sendEvent("breakout_room_update", { rooms: rooms.rooms || [] });
-      log("Konfigurasi breakout room berubah");
-    } catch (err) {
-      log("Gagal ambil breakout room list: " + err.message);
-    }
+    await refreshBreakoutRooms();
+    log("Konfigurasi breakout room berubah");
   });
 }
 
@@ -210,6 +209,12 @@ if (urlCode) {
   setInterval(() => {
     if (meetingUUID) sendEvent("heartbeat", {});
   }, 30000);
+  // Poll breakout room tiap 20 detik -- rename nama peserta di dalam
+  // breakout room tidak memicu onMeetingConfigChanged, jadi perlu dipoll
+  // berkala supaya rekap kehadiran tetap dapat nama terbaru.
+  setInterval(() => {
+    if (meetingUUID) refreshBreakoutRooms();
+  }, 20000);
 }
 
 async function handleOAuthRedirect(code) {

@@ -69,6 +69,28 @@ model ZoomBreakoutRoom {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
+  attendees         ZoomBreakoutRoomAttendee[]
+
   @@unique([sessionId, roomName])
   @@map("zoom_breakout_rooms")
+}
+
+// Rekap absensi per breakout room: begitu peserta pernah "joined" di suatu
+// room, baris ini tetap ada meskipun peserta keluar (isPresent -> false)
+// -- inilah yang bikin ini bisa dipakai sebagai catatan kehadiran breakout
+// room, bukan cuma status live.
+model ZoomBreakoutRoomAttendee {
+  id              String   @id @default(cuid())
+  breakoutRoomId  String   @map("zoom_breakout_room_id")
+  breakoutRoom    ZoomBreakoutRoom @relation(fields: [breakoutRoomId], references: [id], onDelete: Cascade)
+  participantUuid String   @map("participant_uuid")
+  screenName      String?  @map("screen_name")
+  isPresent       Boolean  @default(true) @map("is_present")
+  firstJoinedAt   DateTime @default(now()) @map("first_joined_at")
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([breakoutRoomId, participantUuid])
+  @@map("zoom_breakout_room_attendees")
 }

@@ -11,11 +11,24 @@ type Participant = {
   speaking_seconds: number;
 };
 
+type BreakoutRoomAttendee = {
+  screen_name: string | null;
+  is_present: boolean;
+  first_joined_at: string;
+  last_seen_at: string;
+};
+
+type BreakoutRoom = {
+  room_name: string;
+  participant_count: number;
+  attendees: BreakoutRoomAttendee[];
+};
+
 type Summary = {
   total_present: number;
   camera_off_count: number;
   currently_speaking: string | null;
-  breakout_rooms: { room_name: string; participant_count: number }[];
+  breakout_rooms: BreakoutRoom[];
   participants: Participant[];
 };
 
@@ -95,6 +108,41 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
           )}
         </tbody>
       </table>
+
+      {summary?.breakout_rooms?.length ? (
+        <div style={{ marginTop: 24 }}>
+          <h3 style={{ marginBottom: 8 }}>Rekap kehadiran breakout room</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            {summary.breakout_rooms.map((room) => (
+              <div key={room.room_name} style={{ background: "#fff", borderRadius: 10, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+                <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>{room.room_name}</h4>
+                {room.attendees.length ? (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {room.attendees.map((a, i) => (
+                      <li key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f0f0f0" }}>
+                        <span>{a.screen_name ?? "-"}</span>
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            background: a.is_present ? "#e6f4ea" : "#f1f1f1",
+                            color: a.is_present ? "#137333" : "#888",
+                          }}
+                        >
+                          {a.is_present ? "Di room" : "Keluar"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div style={{ fontSize: 12, color: "#999" }}>Belum ada peserta tercatat</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ fontSize: 12, color: "#999", marginTop: 12 }}>Update terakhir: {lastUpdate}</div>
     </main>

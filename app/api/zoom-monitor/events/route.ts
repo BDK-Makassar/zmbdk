@@ -126,10 +126,46 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
     case "breakout_room_update": {
       for (const room of payload.rooms ?? []) {
         const roomName = room.name ?? `Room ${room.breakoutRoomId ?? "?"}`;
-        await prisma.zoomBreakoutRoom.upsert({
+        const roomParticipants: Array<{ participantUUID: string; displayName?: string; participantStatus?: string }> =
+          room.participants ?? [];
+
+        const dbRoom = await prisma.zoomBreakoutRoom.upsert({
           where: { sessionId_roomName: { sessionId, roomName } },
-          update: { participantCount: (room.participants ?? []).length },
-          create: { sessionId, roomName, participantCount: (room.participants ?? []).length },
+          update: { participantCount: roomParticipants.length },
+          create: { sessionId, roomName, participantCount: roomParticipants.length },
+        });
+
+        // Cuma yang statusnya "joined" dihitung sebagai hadir di room ini
+        // (bukan cuma "assigned"/ditugaskan tapi belum masuk).
+        const joinedUuids = roomParticipants
+          .filter((p) => p.participantStatus === "joined")
+          .map((p) => p.participantUUID);
+
+        for (const p of roomParticipants) {
+          if (p.participantStatus !== "joined") continue;
+          await prisma.zoomBreakoutRoomAttendee.upsert({
+            where: {
+              breakoutRoomId_participantUuid: { breakoutRoomId: dbRoom.id, participantUuid: p.participantUUID },
+            },
+            update: { screenName: p.displayName, isPresent: true, lastSeenAt: new Date() },
+            create: {
+              breakoutRoomId: dbRoom.id,
+              participantUuid: p.participantUUID,
+              screenName: p.displayName,
+              isPresent: true,
+            },
+          });
+        }
+
+        // Yang sebelumnya tercatat hadir tapi sekarang tidak ada di daftar
+        // joined -> tandai sudah keluar, tapi baris riwayatnya tetap ada.
+        await prisma.zoomBreakoutRoomAttendee.updateMany({
+          where: {
+            breakoutRoomId: dbRoom.id,
+            isPresent: true,
+            participantUuid: { notIn: joinedUuids.length ? joinedUuids : ["__none__"] },
+          },
+          data: { isPresent: false },
         });
       }
       break;
@@ -144,7 +180,10 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
 async function buildSummary(sessionId: string) {
   const [participants, breakoutRooms] = await Promise.all([
     prisma.zoomMeetingParticipant.findMany({ where: { sessionId, isPresent: true } }),
-    prisma.zoomBreakoutRoom.findMany({ where: { sessionId } }),
+    prisma.zoomBreakoutRoom.findMany({
+      where: { sessionId },
+      include: { attendees: { orderBy: { screenName: "asc" } } },
+    }),
   ]);
 
   const speaking = participants.find((p) => p.isSpeaking);
@@ -156,6 +195,14 @@ async function buildSummary(sessionId: string) {
     breakout_rooms: breakoutRooms.map((r) => ({
       room_name: r.roomName,
       participant_count: r.participantCount,
+      // Rekap absensi: semua peserta yang PERNAH join room ini, tetap
+      // muncul walau sudah keluar (is_present -> false).
+      attendees: r.attendees.map((a) => ({
+        screen_name: a.screenName,
+        is_present: a.isPresent,
+        first_joined_at: a.firstJoinedAt,
+        last_seen_at: a.lastSeenAt,
+      })),
     })),
     participants: participants.map((p) => ({
       screen_name: p.screenName,
