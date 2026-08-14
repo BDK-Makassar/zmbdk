@@ -9,7 +9,7 @@
  */
 
 const BACKEND_URL = "https://zmbdk.vercel.app/api/zoom-monitor"; // ganti sesuai domain Vercel kamu
-const API_TOKEN = "isi-string-acak-panjang-fadelfaaz"; // shared secret sederhana, lihat catatan keamanan di README
+const API_TOKEN = "756b87d7c310aa061e2abe77e257079cbdca8f406598e379"; // shared secret sederhana, lihat catatan keamanan di README
 
 let meetingUUID = null;
 let participantsCache = {}; // { participantUUID: { screenName, videoOn, inBreakoutRoom, isSpeaking } }
