@@ -174,9 +174,40 @@ function registerListeners() {
   });
 }
 
-init();
+// Halaman ini dipakai untuk dua hal berbeda dengan URL yang sama:
+// 1. Home URL yang di-load Zoom DI DALAM meeting client -> lanjut ke init()
+//    di bawah, connect ke zoomSdk seperti biasa.
+// 2. Redirect URL OAuth: Zoom Marketplace redirect balik ke sini di browser
+//    BIASA (bukan di dalam Zoom client) setelah user authorize app, dengan
+//    ?code=... di URL. zoomSdk.config() pasti gagal di sini karena tidak
+//    ada Zoom client untuk diajak komunikasi -- jadi jangan panggil init(),
+//    selesaikan pertukaran code lewat backend saja.
+const urlCode = new URLSearchParams(window.location.search).get("code");
 
-// Kirim heartbeat tiap 30 detik supaya backend tahu panel masih aktif
-setInterval(() => {
-  if (meetingUUID) sendEvent("heartbeat", {});
-}, 30000);
+if (urlCode) {
+  handleOAuthRedirect(urlCode);
+} else {
+  init();
+  // Kirim heartbeat tiap 30 detik supaya backend tahu panel masih aktif
+  setInterval(() => {
+    if (meetingUUID) sendEvent("heartbeat", {});
+  }, 30000);
+}
+
+async function handleOAuthRedirect(code) {
+  setStatus("Menyelesaikan instalasi app...");
+  try {
+    const res = await fetch(`/api/zoom/oauth?code=${encodeURIComponent(code)}`);
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      setStatus("Instalasi berhasil! Buka meeting Zoom, lalu aktifkan app ini dari panel Apps.");
+      log("OAuth install selesai");
+    } else {
+      setStatus("Instalasi gagal: " + (data.error || "unknown error"), false);
+      log("OAuth install error: " + JSON.stringify(data));
+    }
+  } catch (err) {
+    setStatus("Instalasi gagal: " + err.message, false);
+    log("OAuth install fetch error: " + err.message);
+  }
+}

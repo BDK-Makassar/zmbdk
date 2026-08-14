@@ -113,7 +113,22 @@ Di halaman app config Zoom Marketplace (dari yang sudah kamu setup
 sebelumnya):
 
 - **Home URL**: `https://domain-vercel-kamu.vercel.app/zoom-app/index.html`
+- **Redirect URL for OAuth**: sama persis dengan Home URL di atas
 - **Domain Allow List**: tambahkan `domain-vercel-kamu.vercel.app`
+
+Zoom redirect balik ke Home URL dengan `?code=...` di **browser biasa**
+(bukan di dalam Zoom client) tiap kali app di-authorize/install ulang.
+`app.js` mendeteksi param `code` ini dan menyelesaikannya lewat
+`app/api/zoom-oauth` — lihat `app/api/zoom/oauth/route.ts` — supaya tidak
+error saat `zoomSdk.config()` dipanggil di luar Zoom client. Endpoint ini
+butuh env var tambahan (ambil dari **Basic Information** app kamu di Zoom
+Marketplace):
+
+```
+ZOOM_CLIENT_ID=isi dari Zoom App Credentials
+ZOOM_CLIENT_SECRET=isi dari Zoom App Credentials
+ZOOM_REDIRECT_URL=sama persis dengan Home URL di atas
+```
 
 ## 7. Testing
 
