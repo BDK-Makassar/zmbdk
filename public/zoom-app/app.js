@@ -8,8 +8,8 @@
  * di dashboard live (halaman terpisah yang dibuka admin/panitia).
  */
 
-const BACKEND_URL = "https://zoom-monitor.vercel.app/api/zoom-monitor"; // ganti sesuai domain Vercel kamu
-const API_TOKEN = "GANTI_DENGAN_TOKEN_INTERNAL"; // shared secret sederhana, lihat catatan keamanan di README
+const BACKEND_URL = "https://zmbdk.vercel.app/api/zoom-monitor"; // ganti sesuai domain Vercel kamu
+const API_TOKEN = "isi-string-acak-panjang-fadelfaaz"; // shared secret sederhana, lihat catatan keamanan di README
 
 let meetingUUID = null;
 let participantsCache = {}; // { participantUUID: { screenName, videoOn, inBreakoutRoom, isSpeaking } }

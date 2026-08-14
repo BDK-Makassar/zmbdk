@@ -7,12 +7,12 @@ terpisah seperti versi Laravel.
 
 ## Perbedaan arsitektur penting dari versi Laravel
 
-| Bagian | Versi Laravel | Versi Next.js/Vercel |
-|---|---|---|
-| Backend | Laravel (server sendiri) | Next.js API Routes (serverless) |
-| Database | MySQL/Postgres di server sendiri | Vercel Postgres / Neon (managed) |
-| Realtime | Laravel Reverb (WebSocket self-hosted) | Pusher (managed, karena Vercel serverless **tidak bisa** menjaga koneksi WebSocket tetap terbuka) |
-| Hosting panel Zoom App | Nginx static file terpisah | Folder `public/` di project Next.js yang sama |
+| Bagian                 | Versi Laravel                          | Versi Next.js/Vercel                                                                              |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Backend                | Laravel (server sendiri)               | Next.js API Routes (serverless)                                                                   |
+| Database               | MySQL/Postgres di server sendiri       | Vercel Postgres / Neon (managed)                                                                  |
+| Realtime               | Laravel Reverb (WebSocket self-hosted) | Pusher (managed, karena Vercel serverless **tidak bisa** menjaga koneksi WebSocket tetap terbuka) |
+| Hosting panel Zoom App | Nginx static file terpisah             | Folder `public/` di project Next.js yang sama                                                     |
 
 **Kenapa harus Pusher, bukan Reverb?** Function di Vercel bersifat
 stateless dan mati setelah selesai memproses satu request (cold
@@ -68,6 +68,7 @@ NEXT_PUBLIC_MONITOR_DASHBOARD_TOKEN=sama dengan ZOOM_MONITOR_TOKEN
 > buatkan versi itu kalau dibutuhkan.
 
 Generate token acak dari terminal:
+
 ```bash
 openssl rand -hex 24
 ```
