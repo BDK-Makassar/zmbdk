@@ -4,6 +4,12 @@ import { isAuthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
+// Ringkasan level meeting: total peserta (lobby + breakout digabung, karena
+// getMeetingParticipants Zoom memang begitu) dan daftar nama breakout room
+// yang ada. Detail peserta per room (kamera/bicara) sengaja TIDAK di sini
+// -- itu diambil terpisah lewat
+// sessions/[meetingUuid]/breakout-rooms/[roomName] cuma untuk room yang
+// lagi dilihat, biar nggak perlu query+transfer semua room sekaligus.
 export async function GET(
   req: NextRequest,
   { params }: { params: { meetingUuid: string } }
@@ -20,36 +26,16 @@ export async function GET(
     return NextResponse.json({ message: "Sesi tidak ditemukan" }, { status: 404 });
   }
 
-  const [participants, breakoutRooms] = await Promise.all([
-    prisma.zoomMeetingParticipant.findMany({ where: { sessionId: session.id, isPresent: true } }),
-    prisma.zoomBreakoutRoom.findMany({
-      where: { sessionId: session.id },
-      include: { attendees: { orderBy: { screenName: "asc" } } },
-    }),
+  const [totalPresent, breakoutRooms] = await Promise.all([
+    prisma.zoomMeetingParticipant.count({ where: { sessionId: session.id, isPresent: true } }),
+    prisma.zoomBreakoutRoom.findMany({ where: { sessionId: session.id }, orderBy: { roomName: "asc" } }),
   ]);
 
-  const speaking = participants.find((p) => p.isSpeaking);
-
   return NextResponse.json({
-    total_present: participants.length,
-    camera_off_count: participants.filter((p) => p.cameraOn === false).length,
-    currently_speaking: speaking?.screenName ?? null,
+    total_present: totalPresent,
     breakout_rooms: breakoutRooms.map((r) => ({
       room_name: r.roomName,
       participant_count: r.participantCount,
-      attendees: r.attendees.map((a) => ({
-        screen_name: a.screenName,
-        is_present: a.isPresent,
-        first_joined_at: a.firstJoinedAt,
-        last_seen_at: a.lastSeenAt,
-      })),
-    })),
-    participants: participants.map((p) => ({
-      screen_name: p.screenName,
-      camera_on: p.cameraOn,
-      is_speaking: p.isSpeaking,
-      breakout_room_name: p.breakoutRoomName,
-      speaking_seconds: p.speakingSeconds,
     })),
   });
 }

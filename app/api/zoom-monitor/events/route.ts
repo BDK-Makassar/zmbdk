@@ -95,6 +95,35 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
         where: { sessionId, participantUuid: payload.participant_uuid },
         data: { cameraOn: payload.video_on ?? null },
       });
+
+      // Yang sebenarnya mau dipantau: kamera peserta DI DALAM breakout
+      // room. Kalau event ini datang dari peserta yang lagi di breakout
+      // room (breakout_room_name terisi), update juga baris attendee-nya.
+      if (payload.breakout_room_name) {
+        const room = await prisma.zoomBreakoutRoom.findUnique({
+          where: { sessionId_roomName: { sessionId, roomName: payload.breakout_room_name } },
+        });
+        if (room) {
+          await prisma.zoomBreakoutRoomAttendee.updateMany({
+            where: { breakoutRoomId: room.id, participantUuid: payload.participant_uuid },
+            data: { cameraOn: payload.video_on ?? null },
+          });
+        }
+      }
+      break;
+    }
+
+    case "my_active_speaker_change": {
+      if (!payload.participant_uuid || !payload.breakout_room_name) break;
+      const room = await prisma.zoomBreakoutRoom.findUnique({
+        where: { sessionId_roomName: { sessionId, roomName: payload.breakout_room_name } },
+      });
+      if (room) {
+        await prisma.zoomBreakoutRoomAttendee.updateMany({
+          where: { breakoutRoomId: room.id, participantUuid: payload.participant_uuid },
+          data: { isSpeaking: !!payload.is_speaking },
+        });
+      }
       break;
     }
 
@@ -177,39 +206,23 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
   }
 }
 
+// Ringkasan ini dihitung tiap kali ADA EVENT MASUK (dipicu ke Pusher tiap
+// kali) -- jadi sengaja dibikin murah: cuma nama room + jumlah peserta,
+// TANPA join daftar attendee tiap room. Detail attendee (kamera/bicara)
+// per room diambil on-demand lewat endpoint
+// sessions/[meetingUuid]/breakout-rooms/[roomName], bukan di sini, supaya
+// proses yang jalan di setiap trigger tetap ringan walau room/peserta banyak.
 async function buildSummary(sessionId: string) {
   const [participants, breakoutRooms] = await Promise.all([
     prisma.zoomMeetingParticipant.findMany({ where: { sessionId, isPresent: true } }),
-    prisma.zoomBreakoutRoom.findMany({
-      where: { sessionId },
-      include: { attendees: { orderBy: { screenName: "asc" } } },
-    }),
+    prisma.zoomBreakoutRoom.findMany({ where: { sessionId } }),
   ]);
-
-  const speaking = participants.find((p) => p.isSpeaking);
 
   return {
     total_present: participants.length,
-    camera_off_count: participants.filter((p) => p.cameraOn === false).length,
-    currently_speaking: speaking?.screenName ?? null,
     breakout_rooms: breakoutRooms.map((r) => ({
       room_name: r.roomName,
       participant_count: r.participantCount,
-      // Rekap absensi: semua peserta yang PERNAH join room ini, tetap
-      // muncul walau sudah keluar (is_present -> false).
-      attendees: r.attendees.map((a) => ({
-        screen_name: a.screenName,
-        is_present: a.isPresent,
-        first_joined_at: a.firstJoinedAt,
-        last_seen_at: a.lastSeenAt,
-      })),
-    })),
-    participants: participants.map((p) => ({
-      screen_name: p.screenName,
-      camera_on: p.cameraOn,
-      is_speaking: p.isSpeaking,
-      breakout_room_name: p.breakoutRoomName,
-      speaking_seconds: p.speakingSeconds,
     })),
     updated_at: new Date().toISOString(),
   };

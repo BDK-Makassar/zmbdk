@@ -14,6 +14,16 @@ const API_TOKEN = "756b87d7c310aa061e2abe77e257079cbdca8f406598e379"; // shared 
 let meetingUUID = null;
 let participantsCache = {}; // { participantUUID: { screenName, videoOn, inBreakoutRoom, isSpeaking } }
 
+// State diri sendiri -- dipakai buat scoping laporan kamera/bicara ke
+// breakout room yang lagi ditempati, karena Zoom Apps SDK cuma bisa kasih
+// tau status kamera/bicara untuk USER YANG PANEL-NYA LAGI DIBUKA (diri
+// sendiri), bukan peserta lain. Jadi tiap peserta yang mau dipantau
+// kameranya di breakout room WAJIB buka panel ini sendiri.
+let myParticipantUUID = null;
+let myVideoOn = null;
+let myBreakoutRoomName = null; // null = lagi di main session, bukan breakout room
+let breakoutRoomNameById = {}; // { breakoutRoomId: roomName } dari getBreakoutRoomList terakhir
+
 const el = (id) => document.getElementById(id);
 const log = (msg) => {
   const box = el("log");
@@ -65,10 +75,14 @@ async function init() {
         "getMeetingParticipants",
         "getRunningContext",
         "getBreakoutRoomList",
+        "getUserContext",
+        "getVideoState",
         "onParticipantChange",
         "onMeetingConfigChanged",
         "onActiveSpeakerChange",
+        "onMyActiveSpeakerChange",
         "onMyMediaChange",
+        "onBreakoutRoomChange",
       ],
     });
 
@@ -79,8 +93,26 @@ async function init() {
     setStatus("Terhubung ke meeting: " + meetingUUID);
     log("Zoom App terhubung");
 
+    const userContext = await zoomSdk.callZoomApi("getUserContext");
+    myParticipantUUID = userContext.participantUUID;
+
+    // Ambil status kamera awal (onMyMediaChange cuma nembak kalau ada
+    // PERUBAHAN, jadi kalau kamera sudah nyala dari sebelum panel dibuka,
+    // status ini yang jadi sumber pertama).
+    try {
+      const videoState = await zoomSdk.callZoomApi("getVideoState");
+      myVideoOn = !!videoState.video;
+    } catch {
+      myVideoOn = null;
+    }
+
     await loadInitialParticipants();
     await refreshBreakoutRooms();
+    sendEvent("video_status_self", {
+      participant_uuid: myParticipantUUID,
+      breakout_room_name: myBreakoutRoomName,
+      video_on: myVideoOn,
+    });
     registerListeners();
   } catch (err) {
     setStatus("Gagal terhubung ke Zoom client", false);
@@ -125,8 +157,10 @@ async function loadInitialParticipants() {
 async function refreshBreakoutRooms() {
   try {
     const rooms = await zoomSdk.callZoomApi("getBreakoutRoomList");
-    el("breakoutCount").textContent = (rooms.rooms || []).length;
-    sendEvent("breakout_room_update", { rooms: rooms.rooms || [] });
+    const roomList = rooms.rooms || [];
+    el("breakoutCount").textContent = roomList.length;
+    breakoutRoomNameById = Object.fromEntries(roomList.map((r) => [r.breakoutRoomId, r.name]));
+    sendEvent("breakout_room_update", { rooms: roomList });
   } catch (err) {
     log("Gagal ambil breakout room list: " + err.message);
   }
@@ -161,12 +195,51 @@ function registerListeners() {
     updateSummaryUI();
   });
 
-  // Status kamera on/off (event ini menembak untuk diri sendiri;
-  // untuk memantau SEMUA peserta, kombinasikan dengan polling getMeetingParticipants
-  // secara berkala karena keterbatasan API kamera peserta lain — lihat catatan di README)
+  // Status kamera on/off diri sendiri. Supaya bisa memantau kamera SEMUA
+  // peserta breakout room, tiap peserta wajib buka panel ini sendiri saat
+  // masuk breakout room -- lihat catatan di README.
   zoomSdk.addEventListener("onMyMediaChange", (event) => {
+    myVideoOn = event.media?.video?.state === "on";
     sendEvent("video_status_self", {
-      video_on: event.media?.video?.state === "on",
+      participant_uuid: myParticipantUUID,
+      breakout_room_name: myBreakoutRoomName,
+      video_on: myVideoOn,
+    });
+  });
+
+  // Diri sendiri pindah masuk/keluar breakout room. Dipakai buat scoping
+  // laporan kamera & status bicara ke room yang benar.
+  zoomSdk.addEventListener("onBreakoutRoomChange", async (event) => {
+    if (event.action === "join") {
+      let roomName = breakoutRoomNameById[event.breakoutRoomUUID];
+      if (!roomName) {
+        // Nama room belum ke-cache (misal baru dibuat) -- refresh sekali.
+        await refreshBreakoutRooms();
+        roomName = breakoutRoomNameById[event.breakoutRoomUUID] ?? event.breakoutRoomUUID;
+      }
+      myBreakoutRoomName = roomName;
+      log(`Masuk breakout room: ${roomName}`);
+    } else {
+      myBreakoutRoomName = null;
+      log("Kembali ke main session");
+    }
+    // Kirim ulang status kamera saat ini supaya langsung tercatat di room
+    // yang baru, nggak perlu nunggu peserta toggle kamera lagi.
+    sendEvent("video_status_self", {
+      participant_uuid: myParticipantUUID,
+      breakout_room_name: myBreakoutRoomName,
+      video_on: myVideoOn,
+    });
+  });
+
+  // Status bicara diri sendiri (jalan baik di main session maupun breakout
+  // room, beda dengan onActiveSpeakerChange yang cuma lihat room yang lagi
+  // ditempati panel host).
+  zoomSdk.addEventListener("onMyActiveSpeakerChange", (event) => {
+    sendEvent("my_active_speaker_change", {
+      participant_uuid: myParticipantUUID,
+      breakout_room_name: myBreakoutRoomName,
+      is_speaking: event.status === "started",
     });
   });
 
