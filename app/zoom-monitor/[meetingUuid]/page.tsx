@@ -36,14 +36,50 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
   const [roomLoading, setRoomLoading] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState("");
   const [lastUpdate, setLastUpdate] = useState("Belum ada update");
+  const [refreshing, setRefreshing] = useState(false);
+
+  function loadSummary() {
+    return fetch(`/api/zoom-monitor/sessions/${meetingUuid}/summary`, { headers: AUTH_HEADERS })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setSummary(data);
+          setLastUpdate(new Date().toLocaleTimeString());
+        }
+      })
+      .catch(() => {});
+  }
+
+  function loadRoomDetail(roomName: string) {
+    return fetch(`/api/zoom-monitor/sessions/${meetingUuid}/breakout-rooms/${encodeURIComponent(roomName)}`, {
+      headers: AUTH_HEADERS,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setRoomDetail(data))
+      .catch(() => {});
+  }
+
+  // Tombol refresh manual -- narik ulang data dari server SEKARANG, tanpa
+  // nunggu event/poll berikutnya. Ini cuma baca ulang data yang sudah
+  // tersimpan di server; kalau peserta baru belum ke-record sama sekali
+  // (misal panel yang dipakai monitoring bukan panel milik HOST meeting --
+  // Zoom Apps SDK cuma kasih daftar peserta per breakout room ke host),
+  // refresh nggak akan memunculkan apa-apa karena datanya memang belum
+  // pernah sampai ke server.
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await loadSummary();
+      if (selectedRoomName) await loadRoomDetail(selectedRoomName);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Ringkasan level meeting (headcount + daftar nama room) -- ringan, aman
   // di-push tiap kali ada event lewat Pusher.
   useEffect(() => {
-    fetch(`/api/zoom-monitor/sessions/${meetingUuid}/summary`, { headers: AUTH_HEADERS })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setSummary(data))
-      .catch(() => {});
+    loadSummary();
 
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
@@ -119,9 +155,14 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
 
   return (
     <main style={{ fontFamily: "-apple-system, sans-serif", background: "#f7f7f8", minHeight: "100vh", padding: 24 }}>
-      <h2>Live Monitor — {meetingUuid}</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>Live Monitor — {meetingUuid}</h2>
+        <button onClick={handleRefresh} disabled={refreshing} style={refreshButtonStyle}>
+          {refreshing ? "Memuat..." : "🔄 Refresh"}
+        </button>
+      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginTop: 16, marginBottom: 24 }}>
         <Card title="Total peserta (lobby + breakout)" value={summary?.total_present ?? "-"} />
         <Card title="Jumlah breakout room" value={summary?.breakout_rooms?.length ?? "-"} />
       </div>
@@ -249,5 +290,15 @@ const copyButtonStyle: React.CSSProperties = {
   border: "1px solid #ddd",
   background: "#fff",
   fontSize: 13,
+  cursor: "pointer",
+};
+
+const refreshButtonStyle: React.CSSProperties = {
+  padding: "8px 14px",
+  borderRadius: 8,
+  border: "1px solid #ddd",
+  background: "#fff",
+  fontSize: 13,
+  fontWeight: 500,
   cursor: "pointer",
 };
