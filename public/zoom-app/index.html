@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BDK Makassar - Meeting Monitor</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 0; padding: 12px; font-size: 13px; }
+    .status { padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .ok { background: #e6f4ea; color: #137333; }
+    .err { background: #fce8e6; color: #c5221f; }
+    .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; }
+    #log { max-height: 200px; overflow-y: auto; font-size: 11px; color: #666; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div id="statusBox" class="status">Menghubungkan ke Zoom client...</div>
+  <div id="summary">
+    <div class="row"><span>Total peserta</span><span id="totalCount">-</span></div>
+    <div class="row"><span>Kamera mati</span><span id="cameraOffCount">-</span></div>
+    <div class="row"><span>Sedang aktif bicara</span><span id="activeSpeaker">-</span></div>
+    <div class="row"><span>Breakout room</span><span id="breakoutCount">-</span></div>
+  </div>
+  <div id="log"></div>
+
+  <!-- Zoom Apps SDK -->
+  <script src="https://appssdk.zoom.us/sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

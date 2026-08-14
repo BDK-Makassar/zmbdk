@@ -1,0 +1,74 @@
+// Prisma schema — setara dengan 4 tabel migration Laravel sebelumnya.
+// Provider "postgresql" cocok untuk Vercel Postgres / Neon.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+model ZoomMeetingSession {
+  id           String    @id @default(cuid())
+  meetingUuid  String    @unique @map("meeting_uuid")
+  topic        String?
+  startedAt    DateTime? @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  participants ZoomMeetingParticipant[]
+  events       ZoomMeetingEvent[]
+  breakoutRooms ZoomBreakoutRoom[]
+
+  @@map("zoom_meeting_sessions")
+}
+
+model ZoomMeetingParticipant {
+  id                String   @id @default(cuid())
+  sessionId         String   @map("zoom_meeting_session_id")
+  session           ZoomMeetingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantUuid   String   @map("participant_uuid")
+  screenName        String?  @map("screen_name")
+  isPresent         Boolean  @default(true) @map("is_present")
+  cameraOn          Boolean? @map("camera_on")
+  isSpeaking        Boolean  @default(false) @map("is_speaking")
+  breakoutRoomName  String?  @map("breakout_room_name")
+  joinedAt          DateTime? @map("joined_at")
+  leftAt            DateTime? @map("left_at")
+  speakingSeconds   Int      @default(0) @map("speaking_seconds")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, participantUuid])
+  @@map("zoom_meeting_participants")
+}
+
+model ZoomMeetingEvent {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("zoom_meeting_session_id")
+  session     ZoomMeetingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        String
+  payload     Json?
+  eventSentAt DateTime? @map("event_sent_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sessionId, type])
+  @@map("zoom_meeting_events")
+}
+
+model ZoomBreakoutRoom {
+  id                String   @id @default(cuid())
+  sessionId         String   @map("zoom_meeting_session_id")
+  session           ZoomMeetingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roomName          String   @map("room_name")
+  participantCount  Int      @default(0) @map("participant_count")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, roomName])
+  @@map("zoom_breakout_rooms")
+}
