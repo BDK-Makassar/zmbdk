@@ -95,35 +95,27 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
         where: { sessionId, participantUuid: payload.participant_uuid },
         data: { cameraOn: payload.video_on ?? null },
       });
-
       // Yang sebenarnya mau dipantau: kamera peserta DI DALAM breakout
-      // room. Kalau event ini datang dari peserta yang lagi di breakout
-      // room (breakout_room_name terisi), update juga baris attendee-nya.
-      if (payload.breakout_room_name) {
-        const room = await prisma.zoomBreakoutRoom.findUnique({
-          where: { sessionId_roomName: { sessionId, roomName: payload.breakout_room_name } },
-        });
-        if (room) {
-          await prisma.zoomBreakoutRoomAttendee.updateMany({
-            where: { breakoutRoomId: room.id, participantUuid: payload.participant_uuid },
-            data: { cameraOn: payload.video_on ?? null },
-          });
-        }
-      }
+      // room. Update baris attendee di room manapun peserta ini SEDANG
+      // tercatat hadir (isPresent), bukan match berdasarkan nama room yang
+      // dikirim client -- ID breakout room dari onBreakoutRoomChange
+      // (breakoutRoomUUID) ternyata BEDA namespace dari breakoutRoomId di
+      // getBreakoutRoomList, jadi nggak bisa diandalkan buat matching.
+      // "isPresent" sendiri sumbernya breakout_room_update yang sudah
+      // terbukti akurat.
+      await prisma.zoomBreakoutRoomAttendee.updateMany({
+        where: { participantUuid: payload.participant_uuid, isPresent: true, breakoutRoom: { sessionId } },
+        data: { cameraOn: payload.video_on ?? null },
+      });
       break;
     }
 
     case "my_active_speaker_change": {
-      if (!payload.participant_uuid || !payload.breakout_room_name) break;
-      const room = await prisma.zoomBreakoutRoom.findUnique({
-        where: { sessionId_roomName: { sessionId, roomName: payload.breakout_room_name } },
+      if (!payload.participant_uuid) break;
+      await prisma.zoomBreakoutRoomAttendee.updateMany({
+        where: { participantUuid: payload.participant_uuid, isPresent: true, breakoutRoom: { sessionId } },
+        data: { isSpeaking: !!payload.is_speaking },
       });
-      if (room) {
-        await prisma.zoomBreakoutRoomAttendee.updateMany({
-          where: { breakoutRoomId: room.id, participantUuid: payload.participant_uuid },
-          data: { isSpeaking: !!payload.is_speaking },
-        });
-      }
       break;
     }
 
