@@ -21,6 +21,7 @@ let participantsCache = {}; // { participantUUID: { screenName, videoOn, inBreak
 // kameranya di breakout room WAJIB buka panel ini sendiri.
 let myParticipantUUID = null;
 let myVideoOn = null;
+let myIsSpeaking = false;
 let refreshingBreakoutRooms = false; // cegah refreshBreakoutRooms() numpuk kalau dipanggil bertubi-tubi
 
 const el = (id) => document.getElementById(id);
@@ -118,7 +119,7 @@ async function init() {
 
     await loadInitialParticipants();
     await refreshBreakoutRooms();
-    sendEvent("video_status_self", { participant_uuid: myParticipantUUID, video_on: myVideoOn });
+    resendSelfStatus();
     registerListeners();
   } catch (err) {
     setStatus("Gagal terhubung ke Zoom client", false);
@@ -178,6 +179,20 @@ async function refreshBreakoutRooms() {
   }
 }
 
+// Kirim ulang status kamera & bicara diri sendiri saat ini. Dipanggil bukan
+// cuma saat ADA PERUBAHAN (onMyMediaChange/onMyActiveSpeakerChange), tapi
+// juga dipoll berkala -- soalnya laporan yang dikirim TEPAT saat pindah
+// room (via onBreakoutRoomChange) bisa lebih cepat sampai daripada baris
+// attendee-nya sendiri ke-tandai "isPresent" di server (yang sumbernya
+// breakout_room_update, terpisah). Kalau itu terjadi, laporan pertama
+// nggak nemu baris yang cocok dan kamera/bicara tetap "tidak diketahui"
+// selamanya sampai ada perubahan berikutnya. Dengan dipoll ulang, dalam
+// ~20 detik data bakal nyusul kekoreksi sendiri.
+function resendSelfStatus() {
+  sendEvent("video_status_self", { participant_uuid: myParticipantUUID, video_on: myVideoOn });
+  sendEvent("my_active_speaker_change", { participant_uuid: myParticipantUUID, is_speaking: myIsSpeaking });
+}
+
 function registerListeners() {
   // Peserta join / leave
   zoomSdk.addEventListener("onParticipantChange", (event) => {
@@ -227,7 +242,7 @@ function registerListeners() {
   try {
     zoomSdk.addEventListener("onBreakoutRoomChange", (event) => {
       log(event.action === "join" ? "Masuk breakout room" : "Kembali ke main session");
-      sendEvent("video_status_self", { participant_uuid: myParticipantUUID, video_on: myVideoOn });
+      resendSelfStatus();
     });
   } catch (err) {
     log("onBreakoutRoomChange belum di-enable di Zoom Marketplace: " + err.message);
@@ -238,10 +253,8 @@ function registerListeners() {
   // ditempati panel host).
   try {
     zoomSdk.addEventListener("onMyActiveSpeakerChange", (event) => {
-      sendEvent("my_active_speaker_change", {
-        participant_uuid: myParticipantUUID,
-        is_speaking: event.status === "started",
-      });
+      myIsSpeaking = event.status === "started";
+      sendEvent("my_active_speaker_change", { participant_uuid: myParticipantUUID, is_speaking: myIsSpeaking });
     });
   } catch (err) {
     log("onMyActiveSpeakerChange belum di-enable di Zoom Marketplace: " + err.message);
@@ -288,9 +301,15 @@ if (urlCode) {
   }, 30000);
   // Poll breakout room tiap 20 detik -- rename nama peserta di dalam
   // breakout room tidak memicu onMeetingConfigChanged, jadi perlu dipoll
-  // berkala supaya rekap kehadiran tetap dapat nama terbaru.
+  // berkala supaya rekap kehadiran tetap dapat nama terbaru. Kirim ulang
+  // status kamera/bicara diri sendiri di tick yang sama supaya kalau ada
+  // yang kelewat di kirim ulang, kamera/bicara ke-koreksi otomatis dalam
+  // 20 detik kalau ada race dengan attendee jelas.
   setInterval(() => {
-    if (meetingUUID) refreshBreakoutRooms();
+    if (meetingUUID) {
+      refreshBreakoutRooms();
+      resendSelfStatus();
+    }
   }, 20000);
 }
 

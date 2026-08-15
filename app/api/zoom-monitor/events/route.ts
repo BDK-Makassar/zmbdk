@@ -162,13 +162,37 @@ async function handleEventType(sessionId: string, type: string, payload: Record<
           .filter((p) => p.participantStatus === "joined")
           .map((p) => p.participantUUID);
 
+        // Buat ngitung durasi total, kita perlu tau lastSeenAt SEBELUM update
+        // ini -- nggak bisa dihitung dalam satu query upsert, jadi ambil
+        // dulu baris yang udah ada.
+        const existing = await prisma.zoomBreakoutRoomAttendee.findMany({
+          where: { breakoutRoomId: dbRoom.id, participantUuid: { in: joinedUuids } },
+        });
+        const existingByUuid = new Map(existing.map((a) => [a.participantUuid, a]));
+        const now = new Date();
+
         for (const p of roomParticipants) {
           if (p.participantStatus !== "joined") continue;
+          const prev = existingByUuid.get(p.participantUUID);
+          // Delta cuma dihitung kalau tadinya SUDAH tercatat hadir -- biar
+          // durasi keluar-masuk room (mis. sempat pindah room lalu balik)
+          // nggak ikut kehitung sebagai waktu di room ini. Dibatasi 5 menit
+          // per tick supaya satu gap panjang (mis. sempat nggak ke-poll)
+          // nggak nge-bengkakin total durasi.
+          const deltaSeconds = prev?.isPresent
+            ? Math.min(Math.round((now.getTime() - prev.lastSeenAt.getTime()) / 1000), 300)
+            : 0;
+
           await prisma.zoomBreakoutRoomAttendee.upsert({
             where: {
               breakoutRoomId_participantUuid: { breakoutRoomId: dbRoom.id, participantUuid: p.participantUUID },
             },
-            update: { screenName: p.displayName, isPresent: true, lastSeenAt: new Date() },
+            update: {
+              screenName: p.displayName,
+              isPresent: true,
+              lastSeenAt: now,
+              totalSeconds: { increment: deltaSeconds },
+            },
             create: {
               breakoutRoomId: dbRoom.id,
               participantUuid: p.participantUUID,

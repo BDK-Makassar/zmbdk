@@ -15,9 +15,19 @@ type Attendee = {
   is_present: boolean;
   camera_on: boolean | null;
   is_speaking: boolean;
+  total_seconds: number;
   first_joined_at: string;
   last_seen_at: string;
 };
+
+function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}j ${m}m`;
+  if (m > 0) return `${m}m ${s}d`;
+  return `${s}d`;
+}
 
 type RoomDetail = {
   room_name: string;
@@ -216,7 +226,7 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Nama", "Kamera", "Bicara", "Status"].map((h) => (
+                  {["Nama", "Kamera", "Bicara", "Durasi di room", "Status"].map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: "8px 10px", fontSize: 12, background: "#fafafa", color: "#666" }}>
                       {h}
                     </th>
@@ -237,6 +247,7 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
                         />
                       </td>
                       <td style={cellStyle}>{a.is_speaking ? "Aktif" : "Diam"}</td>
+                      <td style={cellStyle}>{formatDuration(a.total_seconds)}</td>
                       <td style={cellStyle}>
                         <Badge text={a.is_present ? "Di room" : "Keluar"} tone={a.is_present ? "good" : "neutral"} />
                       </td>
@@ -244,7 +255,7 @@ export default function DashboardPage({ params }: { params: { meetingUuid: strin
                   ))
                 ) : (
                   <tr>
-                    <td style={cellStyle} colSpan={4}>
+                    <td style={cellStyle} colSpan={5}>
                       Belum ada peserta tercatat di room ini.
                     </td>
                   </tr>

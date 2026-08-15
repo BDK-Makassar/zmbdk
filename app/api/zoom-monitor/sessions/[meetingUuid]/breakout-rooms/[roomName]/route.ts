@@ -40,6 +40,7 @@ export async function GET(
       is_present: a.isPresent,
       camera_on: a.cameraOn,
       is_speaking: a.isSpeaking,
+      total_seconds: a.totalSeconds,
       first_joined_at: a.firstJoinedAt,
       last_seen_at: a.lastSeenAt,
     })),

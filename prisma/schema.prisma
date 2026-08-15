@@ -88,6 +88,7 @@ model ZoomBreakoutRoomAttendee {
   isPresent       Boolean  @default(true) @map("is_present")
   cameraOn        Boolean? @map("camera_on")
   isSpeaking      Boolean  @default(false) @map("is_speaking")
+  totalSeconds    Int      @default(0) @map("total_seconds")
   firstJoinedAt   DateTime @default(now()) @map("first_joined_at")
   lastSeenAt      DateTime @default(now()) @map("last_seen_at")
   createdAt       DateTime @default(now()) @map("created_at")
